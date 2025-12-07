@@ -1,148 +1,71 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-import time
-import threading
-import xml.etree.ElementTree as ET
-import random
 
-# ---------------------------------------------------------
-# [기본 설정] 페이지 제목 및 아이콘
-# ---------------------------------------------------------
-st.set_page_config(page_title="황금알 봇", page_icon="🪿")
+st.title("🚑 긴급 진단 키트")
+st.write("어디가 고장 났는지 확인해 봅시다.")
 
-# ---------------------------------------------------------
-# [기능 1] 데이터 수집 (뇌: 무엇을 감시할까?)
-# ---------------------------------------------------------
-def get_google_trends():
-    """구글 트렌드: 현재 이슈 키워드 가져오기"""
-    rss_url = "https://trends.google.co.kr/trends/trendingsearches/daily/rss?geo=KR"
+# 1. 입력 받기
+token = st.text_input("텔레그램 토큰", type="password")
+chat_id = st.text_input("채팅 ID")
+keyword = st.text_input("테스트 키워드", value="뉴스")
+url = "https://news.naver.com/main/list.naver?mode=LS2D&mid=shm&sid1=105&sid2=230"
+
+if st.button("진단 시작 (눌러보세요)"):
+    st.divider()
+    
+    # --- 테스트 1: 텔레그램 연결 ---
+    st.subheader("1. 텔레그램 연결 테스트")
+    send_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    params = {"chat_id": chat_id, "text": "🔔 [테스트] 이 메시지가 보이면 성공!"}
+    
     try:
-        response = requests.get(rss_url)
-        root = ET.fromstring(response.content)
-        trends = [item.find('title').text for item in root.findall('.//item')]
-        return trends[:10]
-    except:
-        return ["특가", "오류", "대란"]
-
-def get_naver_shopping_best():
-    """네이버 쇼핑: 현재 잘 팔리는 디지털/가전 제품 가져오기"""
-    url = "https://search.shopping.naver.com/best/category/click?categoryCategoryId=50000003&viewType=list&sort=popular"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    try:
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        # 네이버 쇼핑 클래스명은 변동 가능성이 있어 imageTitle_title을 포함하는 div 검색
-        items = soup.find_all('div', class_=lambda x: x and 'imageTitle_title' in x)
+        res = requests.get(send_url, params=params)
+        result = res.json()
         
-        keywords = []
-        for item in items:
-            # 검색 정확도를 위해 상품명의 앞 2단어만 추출 (예: 삼성전자 갤럭시북4 -> 삼성전자 갤럭시북4)
-            full_name = item.text
-            short_name = " ".join(full_name.split()[:2])
-            keywords.append(short_name)
-        return list(set(keywords))[:10]
-    except:
-        return ["아이폰", "갤럭시", "노트북"]
-
-# ---------------------------------------------------------
-# [기능 2] 봇 엔진 (눈: 핫딜 찾기 & 입: 알림 보내기)
-# ---------------------------------------------------------
-def send_telegram_message(token, chat_id, message):
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    params = {"chat_id": chat_id, "text": message}
-    try:
-        requests.get(url, params=params)
-    except:
-        pass
-
-def crawling_job(token, chat_id, target_url, mode, manual_kws, log_container):
-    if 'sent_titles' not in st.session_state:
-        st.session_state['sent_titles'] = []
-
-    while st.session_state['is_running']:
-        try:
-            # 1. 모드에 따라 키워드 자동 선정
-            if mode == "네이버 쇼핑 랭킹 (수익)":
-                current_keywords = get_naver_shopping_best()
-                icon = "🛍️"
-            elif mode == "구글 트렌드 (이슈)":
-                current_keywords = get_google_trends()
-                icon = "🌊"
-            else:
-                current_keywords = manual_kws
-                icon = "✍️"
-
-            # 2. 로그 업데이트
-            kws_str = ", ".join(current_keywords[:3])
-            log_container.info(f"[{time.strftime('%H:%M:%S')}] {icon} 타겟팅 중: {kws_str} 등 {len(current_keywords)}개")
-
-            # 3. 사이트 크롤링 (핫딜 게시판 탐색)
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(target_url, headers=headers)
-            soup = BeautifulSoup(response.text, 'html.parser')
+        if res.status_code == 200:
+            st.success(f"✅ 성공! 텔레그램 메시지를 확인하세요.")
+        else:
+            st.error(f"❌ 실패! (토큰이나 ID가 틀렸습니다)")
+            st.code(f"에러 내용: {result}", language="json")
+            st.info("팁: 토큰 앞에 빈칸이 있거나, ID가 숫자가 아닌지 확인하세요.")
             
-            # ※ 중요: 사이트마다 태그가 다름. 아래는 네이버 뉴스 예시 (실전엔 뽐뿌 등 태그로 변경 필요)
-            articles = soup.select("dt > a") 
+    except Exception as e:
+        st.error(f"❌ 통신 에러: {e}")
 
+    # --- 테스트 2: 사이트 크롤링 ---
+    st.subheader("2. 사이트 접속 테스트")
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers)
+        
+        if res.status_code == 200:
+            st.success(f"✅ 사이트 접속 성공! (상태코드: 200)")
+            
+            soup = BeautifulSoup(res.text, 'html.parser')
+            articles = soup.select("dt > a")
+            
+            found = False
+            st.write(f"🔍 '{keyword}' 단어를 찾는 중...")
+            
+            # 검색 결과 미리보기
+            count = 0
             for article in articles:
                 title = article.text.strip()
-                link = article.get('href')
-
-                for kw in current_keywords:
-                    # 띄어쓰기 무시하고 비교
-                    if kw.replace(" ", "") in title.replace(" ", "") and title not in st.session_state['sent_titles']:
-                        msg = f"🔥 [심봤다! ({kw})]\n\n제목: {title}\n링크: {link}"
-                        send_telegram_message(token, chat_id, msg)
-                        st.session_state['sent_titles'].append(title)
+                if keyword in title:
+                    st.write(f"- 발견: {title}")
+                    found = True
+                    count += 1
             
-            # 4. 차단 방지 휴식 (60초 + 랜덤)
-            time.sleep(60 + random.randint(1, 20))
-
-        except Exception as e:
-            log_container.error(f"오류 발생: {e}")
-            time.sleep(60)
-
-# ---------------------------------------------------------
-# [화면] 웹사이트 UI
-# ---------------------------------------------------------
-st.title("🪿 황금알 자동 봇")
-st.markdown("자동으로 돈 되는 키워드를 찾아 핫딜을 감시합니다.")
-
-with st.sidebar:
-    st.header("⚙️ 설정")
-    input_token = st.text_input("텔레그램 토큰", type="password")
-    input_chat_id = st.text_input("채팅 ID")
-    # 아래 URL을 '뽐뿌 게시판'이나 '딜바다' URL로 바꾸면 더 효과가 좋습니다.
-    input_url = st.text_input("감시 URL", value="https://news.naver.com/main/list.naver?mode=LS2D&mid=shm&sid1=105&sid2=230")
-
-col1, col2 = st.columns([2, 1])
-with col1:
-    mode = st.radio("모드 선택", ["네이버 쇼핑 랭킹 (수익)", "구글 트렌드 (이슈)", "수동 입력"])
-    manual_kws = []
-    if mode == "수동 입력":
-        manual_kws = st.text_area("키워드 (쉼표 구분)", "특가, 오류").split(",")
-
-with col2:
-    st.write("") # 여백
-    st.write("") 
-    if 'is_running' not in st.session_state:
-        st.session_state['is_running'] = False
-        
-    if st.button("🚀 시작", type="primary", use_container_width=True):
-        if not input_token:
-            st.error("토큰 필요!")
-        elif not st.session_state['is_running']:
-            st.session_state['is_running'] = True
-            t = threading.Thread(target=crawling_job, args=(input_token, input_chat_id, input_url, mode, manual_kws, st.empty()))
-            t.start()
-            st.toast("사냥 시작!")
+            if found:
+                st.success(f"✅ 총 {count}개의 글을 찾았습니다! 크롤링 기능은 정상입니다.")
+            else:
+                st.warning(f"⚠️ 사이트 접속은 됐는데 '{keyword}' 단어가 제목에 없습니다.")
+                st.write("현재 페이지의 제목들(일부):")
+                for i, article in enumerate(articles[:3]):
+                    st.caption(f"{i+1}. {article.text.strip()}")
+        else:
+            st.error("❌ 사이트 접속 차단됨 (봇으로 의심받음)")
             
-    if st.button("🛑 중지", use_container_width=True):
-        st.session_state['is_running'] = False
-        st.info("중지됨.")
-
-st.divider()
-st.caption("실시간 로그")
-# 봇이 실행되면서 이 빈 공간에 로그를 출력함
-st.empty()
+    except Exception as e:
+        st.error(f"❌ 크롤링 에러: {e}")
